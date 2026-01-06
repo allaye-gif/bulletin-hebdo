@@ -1,0 +1,744 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Wind, 
+  Thermometer, 
+  Droplets, 
+  Eye, 
+  Sun, 
+  Info, 
+  ShieldCheck,
+  Calendar,
+  CheckCircle2,
+  MapPin,
+  ArrowDown,
+  Printer,
+  Edit3,
+  Save,
+  Plus,
+  Trash2,
+  Type,
+  List,
+  MessageSquare,
+  Layout,
+  ArrowUp,
+  ArrowDown as ArrowDownIcon,
+  Palette,
+  AlertCircle,
+  Download,
+  Loader2,
+  Upload,
+  Link as LinkIcon,
+  Image as ImageIcon,
+  X
+} from 'lucide-react';
+
+const App = () => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [toastMsg, setToastMsg] = useState(null);
+  const fileInputRef = useRef(null);
+  
+  // --- CHARGEMENT DES LIBRAIRIES PDF ---
+  useEffect(() => {
+    const loadScript = (src) => {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+
+    Promise.all([
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+    ]).then(() => {
+      console.log("Moteurs PDF prêts");
+    }).catch(err => console.error("Erreur chargement PDF libs", err));
+  }, []);
+
+  // --- 1. ÉTAT INITIAL + CHARGEMENT SAUVEGARDE ---
+  const defaultData = {
+    info: {
+      numero: "045",
+      periode: "Du 04 au 10 Janvier 2026",
+      dateEmission: "03 janvier 2026",
+      logoType: 'upload', // 'upload' ou 'url'
+      logoUrl: "", 
+      logoBase64: null 
+    },
+    synoptique: {
+      texteIntro: "La semaine sera marquée par :",
+      points: [
+        "Un ciel peu nuageux à nuageux.",
+        "Des vents d’harmattan dominants dans tout le pays.",
+        "Une visibilité globalement affectée par la poussière en suspension.",
+        "Des températures en légère hausse par rapport à la semaine écoulée."
+      ]
+    },
+    previsions: {
+      ciel: "En général, le ciel sera peu nuageux à couvert par endroits sur tout le pays.",
+      vents: "Les vents d’harmattan domineront. Incursions de vents du sud (Sikasso, Bougouni) en début de semaine. Intensité faible à modérée.",
+      visibilite: "Des particules de poussière seront observées sur l’ensemble du pays affectant la visibilité.",
+      visibiliteNord: "Moins de 2 à 5 km",
+      visibiliteSud: "De 5 à plus de 9 km",
+      pluies: "Fines pluies possibles en début de semaine (05-06 janv) sur Sikasso et Bougouni.",
+      tempDesc: "Hausse générale des températures par rapport à la semaine passée.",
+      tempMaxRange: "24°C à 38°C",
+      tempMaxLieux: "Bougouni, San et Gao",
+      tempMinRange: "7°C à 23°C",
+      tempMinLieux: "Taoudéni",
+      tempNB: "Baisse des températures (surtout minimales) prévue en fin de semaine."
+    },
+    conseils: [
+      "Se protéger contre les vents et la poussière (masques, pull-overs).",
+      "Protéger les enfants, les personnes âgées et les malades.",
+      "Consulter régulièrement des spécialistes de santé."
+    ],
+    customSections: [] 
+  };
+
+  // Chargement depuis le LocalStorage au démarrage
+  const [data, setData] = useState(() => {
+    const saved = localStorage.getItem('meteoMaliData');
+    return saved ? JSON.parse(saved) : defaultData;
+  });
+
+  // Sauvegarde automatique à chaque changement
+  useEffect(() => {
+    localStorage.setItem('meteoMaliData', JSON.stringify(data));
+  }, [data]);
+
+  // --- HANDLERS ---
+  const handleChange = (section, field, value) => {
+    setData(prev => ({ ...prev, [section]: { ...prev[section], [field]: value } }));
+  };
+
+  const handleLogoUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setData(prev => ({ 
+          ...prev, 
+          info: { ...prev.info, logoBase64: reader.result, logoType: 'upload' } 
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Gestion dynamique des points synoptiques
+  const handleSynoptiquePointChange = (index, value) => {
+    const newPoints = [...data.synoptique.points];
+    newPoints[index] = value;
+    setData(prev => ({ ...prev, synoptique: { ...prev.synoptique, points: newPoints } }));
+  };
+  const addSynoptiquePoint = () => {
+    setData(prev => ({ ...prev, synoptique: { ...prev.synoptique, points: [...prev.synoptique.points, "Nouveau point"] } }));
+  };
+  const removeSynoptiquePoint = (index) => {
+    setData(prev => ({ ...prev, synoptique: { ...prev.synoptique, points: prev.synoptique.points.filter((_, i) => i !== index) } }));
+  };
+
+  // Gestion dynamique des conseils
+  const handleConseilChange = (index, value) => {
+    const newConseils = [...data.conseils];
+    newConseils[index] = value;
+    setData(prev => ({ ...prev, conseils: newConseils }));
+  };
+  const addConseil = () => {
+    setData(prev => ({ ...prev, conseils: [...prev.conseils, "Nouveau conseil"] }));
+  };
+  const removeConseil = (index) => {
+    setData(prev => ({ ...prev, conseils: prev.conseils.filter((_, i) => i !== index) }));
+  };
+
+  const addCustomSection = (type) => {
+    let titlePlaceholder = "Nouveau Titre";
+    let contentPlaceholder = "Votre texte ici...";
+    let defaultStyle = 'blue'; 
+    if (type === 'title') { titlePlaceholder = "TITRE DE SECTION"; contentPlaceholder = ""; defaultStyle = 'slate'; }
+    if (type === 'highlight') { defaultStyle = 'amber'; }
+    const newSection = { id: Date.now(), type: type, title: titlePlaceholder, content: type === 'list' ? ["Point 1", "Point 2"] : contentPlaceholder, style: defaultStyle };
+    setData(prev => ({ ...prev, customSections: [...prev.customSections, newSection] }));
+  };
+  const removeCustomSection = (id) => {
+    if(confirm("Supprimer cette rubrique ?")) { setData(prev => ({ ...prev, customSections: prev.customSections.filter(s => s.id !== id) })); }
+  };
+  const moveSection = (index, direction) => {
+    const newSections = [...data.customSections];
+    if (direction === 'up' && index > 0) {
+      [newSections[index], newSections[index - 1]] = [newSections[index - 1], newSections[index]];
+    } else if (direction === 'down' && index < newSections.length - 1) {
+      [newSections[index], newSections[index + 1]] = [newSections[index + 1], newSections[index]];
+    }
+    setData(prev => ({ ...prev, customSections: newSections }));
+  };
+  const updateCustomSection = (id, field, value) => {
+    setData(prev => ({ ...prev, customSections: prev.customSections.map(s => s.id === id ? { ...s, [field]: value } : s) }));
+  };
+  const updateCustomSectionList = (sectionId, listIndex, value) => {
+    setData(prev => ({ ...prev, customSections: prev.customSections.map(s => { if (s.id === sectionId) { const newList = [...s.content]; newList[listIndex] = value; return { ...s, content: newList }; } return s; }) }));
+  };
+  const addCustomSectionListItem = (sectionId) => {
+    setData(prev => ({ ...prev, customSections: prev.customSections.map(s => s.id === sectionId ? { ...s, content: [...s.content, "Nouveau point"] } : s) }));
+  };
+
+  // --- GÉNÉRATION PDF PROFESSIONNELLE (MULTI-PAGES INTELLIGENT) ---
+  const handleDownloadPDF = async () => {
+    if (!window.html2canvas || !window.jspdf) {
+      alert("Outils PDF en chargement... Réessayez."); return;
+    }
+
+    setIsGenerating(true);
+    setToastMsg("Génération du PDF...");
+
+    try {
+      const container = document.getElementById('bulletin-container');
+      const { jsPDF } = window.jspdf;
+      
+      // Configuration A4
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 0; 
+      
+      // On capture tout le document en haute résolution
+      const canvas = await window.html2canvas(container, {
+        scale: 2, // Haute qualité (Retina)
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      
+      // Conversion pixels canvas -> mm PDF
+      const pxPerMm = imgWidth / pageWidth; 
+      const pageHeightInPx = pageHeight * pxPerMm; // Hauteur d'une page A4 en pixels de l'image
+      
+      // ALGORITHME DE DÉCOUPE INTELLIGENTE
+      const smartBreaks = Array.from(container.querySelectorAll('.smart-break'));
+      let splitPoints = [0];
+      let currentY = 0;
+      
+      // Tant qu'il reste du contenu à traiter
+      while (currentY < imgHeight) {
+        let pageBottomLimit = currentY + pageHeightInPx;
+        
+        if (pageBottomLimit >= imgHeight) {
+          splitPoints.push(imgHeight);
+          break;
+        }
+
+        const containerRect = container.getBoundingClientRect();
+        
+        let bestCutY = pageBottomLimit;
+        let cutFound = false;
+
+        for (let el of smartBreaks) {
+          const rect = el.getBoundingClientRect();
+          const relTop = rect.top - containerRect.top;
+          const relBottom = rect.bottom - containerRect.top;
+          
+          const canvasTop = relTop * 2; 
+          const canvasBottom = relBottom * 2;
+
+          if (canvasTop < pageBottomLimit && canvasBottom > pageBottomLimit) {
+            bestCutY = canvasTop;
+            cutFound = true;
+            break;
+          }
+        }
+
+        splitPoints.push(bestCutY);
+        currentY = bestCutY;
+      }
+
+      // GÉNÉRATION DES PAGES
+      for (let i = 0; i < splitPoints.length - 1; i++) {
+        if (i > 0) pdf.addPage();
+
+        const startY = splitPoints[i];
+        const endY = splitPoints[i+1];
+        const sliceHeight = endY - startY;
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = imgWidth;
+        tempCanvas.height = sliceHeight;
+        
+        const ctx = tempCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, imgWidth, sliceHeight);
+        
+        ctx.drawImage(
+          canvas, 
+          0, startY, imgWidth, sliceHeight, // Source
+          0, 0, imgWidth, sliceHeight       // Destination
+        );
+        
+        const sliceImgData = tempCanvas.toDataURL('image/jpeg', 0.95);
+        const pdfSliceHeight = (sliceHeight * pageWidth) / imgWidth;
+        
+        pdf.addImage(sliceImgData, 'JPEG', 0, 0, pageWidth, pdfSliceHeight);
+      }
+
+      const safePeriode = data.info.periode.replace(/[\\/:*?"<>|]/g, '-'); 
+      pdf.save(`Bulletin_Hebdo_${safePeriode}.pdf`);
+      
+      setToastMsg("PDF téléchargé !");
+      setTimeout(() => setToastMsg(null), 3000);
+
+    } catch (error) {
+      console.error(error);
+      alert("Erreur lors de la génération. Veuillez réessayer.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const getStyleClasses = (style) => {
+    switch(style) {
+      case 'blue': return "bg-white border-l-4 border-blue-400 border-t border-r border-b border-slate-100";
+      case 'indigo': return "bg-white border-l-4 border-indigo-400 border-t border-r border-b border-slate-100";
+      case 'rose': return "bg-white border-l-4 border-rose-400 border-t border-r border-b border-slate-100";
+      case 'amber': return "bg-white border-l-4 border-amber-400 border-t border-r border-b border-slate-100";
+      case 'teal': return "bg-white border-l-4 border-teal-400 border-t border-r border-b border-slate-100";
+      case 'emerald': return "bg-emerald-800 text-white border-none";
+      case 'slate': return "bg-slate-50 border border-slate-200";
+      default: return "bg-white border border-slate-200";
+    }
+  };
+
+  const getIconColor = (style) => {
+    switch(style) {
+      case 'blue': return "text-blue-500";
+      case 'indigo': return "text-indigo-500";
+      case 'rose': return "text-rose-500";
+      case 'amber': return "text-amber-500";
+      case 'teal': return "text-teal-500";
+      case 'emerald': return "text-white";
+      default: return "text-slate-500";
+    }
+  };
+
+  const getTitleColor = (style) => {
+    switch(style) {
+      case 'blue': return "text-blue-900";
+      case 'indigo': return "text-indigo-900";
+      case 'rose': return "text-rose-900";
+      case 'amber': return "text-amber-900";
+      case 'teal': return "text-teal-900";
+      case 'emerald': return "text-white";
+      default: return "text-slate-900";
+    }
+  };
+
+  const displayLogo = () => {
+    if (data.info.logoType === 'upload' && data.info.logoBase64) return data.info.logoBase64;
+    if (data.info.logoType === 'url' && data.info.logoUrl) return data.info.logoUrl;
+    return null;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#Eef2f6] text-slate-800 font-sans pb-16 print:bg-white print:p-0 print:m-0">
+      
+      {/* CSS IMPRESSION */}
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 0; }
+          .no-print, .editor-overlay-container, button { display: none !important; }
+          body { background: white !important; margin: 0 !important; overflow: visible !important; }
+          #bulletin-container { width: 100% !important; max-width: none !important; position: static !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+      `}</style>
+
+      {/* TOAST */}
+      {toastMsg && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 no-print">
+            {isGenerating ? <Loader2 className="animate-spin text-blue-400" size={20}/> : <CheckCircle2 className="text-emerald-400" size={20} />}
+            <span className="font-medium text-sm">{toastMsg}</span>
+        </div>
+      )}
+
+      {/* TOOLBAR */}
+      <div className="fixed bottom-6 right-6 flex gap-3 z-50 no-print animate-in slide-in-from-bottom-10">
+        {!isEditing && (
+          <>
+            <button onClick={() => setIsEditing(true)} disabled={isGenerating} className="bg-slate-800 text-white px-6 py-4 rounded-full shadow-xl hover:bg-slate-700 transition-all hover:scale-105 flex items-center gap-2 font-bold disabled:opacity-50">
+              <Edit3 size={20} /> Modifier
+            </button>
+            <button onClick={handleDownloadPDF} disabled={isGenerating} className="bg-blue-600 text-white px-6 py-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-105 flex items-center gap-2 font-bold ring-4 ring-blue-600/20 disabled:opacity-50 disabled:cursor-wait">
+              {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} />} 
+              {isGenerating ? "Génération..." : "Télécharger PDF"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* --- BULLETIN VISIBLE --- */}
+      <div id="bulletin-container" className={`mx-auto transition-all duration-300 print-area max-w-[21cm] ${isEditing ? 'opacity-20 pointer-events-none blur-sm' : 'opacity-100'}`}>
+        <div className="bg-white shadow-2xl print:shadow-none min-h-[29.7cm] relative overflow-hidden print:overflow-visible pb-10">
+          
+          {/* HEADER */}
+          <header className="border-b-4 border-emerald-500 relative bg-white smart-break">
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.03]"></div>
+            <div className="px-8 py-6 flex justify-between items-center gap-6">
+              <div className="space-y-1">
+                <h3 className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">MINISTÈRE DES TRANSPORTS<br/>ET DES INFRASTRUCTURES</h3>
+                <div className="flex items-center gap-3 mt-2">
+                  {displayLogo() ? (
+                    <img src={displayLogo()} alt="Logo" className="w-16 h-16 object-contain drop-shadow-lg" crossOrigin="anonymous" />
+                  ) : (
+                    <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-emerald-200 print:shadow-none">M</div>
+                  )}
+                  <div>
+                    <h1 className="text-3xl font-black text-slate-900 leading-none tracking-tight">MALI-MÉTÉO</h1>
+                    <p className="text-xs font-bold text-emerald-700 mt-1 uppercase tracking-wide">Agence Nationale de la Météorologie</p>
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-serif italic text-slate-500">République du Mali</p>
+                <p className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mb-2">Un Peuple - Un But - Une Foi</p>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg print:border-slate-300">
+                  <h2 className="text-sm font-bold text-emerald-600 uppercase tracking-widest mb-1">Bulletin Hebdomadaire</h2>
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="text-xl font-black text-slate-800 leading-none">N°{data.info.numero}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 text-slate-500 font-medium text-xs mt-1">
+                    <Calendar size={12} />
+                    <span>{data.info.periode}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <main className="px-8 py-6 space-y-8 bg-white">
+            
+            {/* I. SYNOPTIQUE */}
+            <section className="break-inside-avoid rounded-2xl border border-slate-200 overflow-hidden bg-white smart-break">
+              <div className="bg-slate-800 p-3 flex items-center gap-3 print:bg-slate-800 print:text-white">
+                <div className="p-1 bg-yellow-400 rounded text-slate-900"><Info size={16} /></div>
+                <h2 className="text-white font-bold uppercase tracking-wider text-sm">I. Situation Synoptique Générale</h2>
+              </div>
+              <div className="p-6 bg-white">
+                <p className="font-serif text-lg text-slate-700 mb-4 italic border-l-4 border-yellow-400 pl-4 bg-yellow-50/50 py-2 rounded-r-lg">"{data.synoptique.texteIntro}"</p>
+                <ul className="grid grid-cols-2 gap-4">
+                  {data.synoptique.points.map((point, idx) => (
+                    <li key={idx} className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl print:bg-slate-50">
+                      <CheckCircle2 className="text-emerald-500 shrink-0 mt-0.5" size={18} />
+                      <span className="text-slate-700 text-sm font-medium leading-snug">{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+
+            {/* II. PRÉVISIONS */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 smart-break">
+                <div className="h-px bg-slate-300 flex-1"></div>
+                <h2 className="text-slate-400 font-bold uppercase tracking-widest text-sm">II. Prévisions Météorologiques</h2>
+                <div className="h-px bg-slate-300 flex-1"></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <section className="break-inside-avoid bg-white p-5 rounded-2xl border-l-4 border-blue-400 shadow-sm border-t border-r border-b border-slate-100 smart-break">
+                  <h3 className="flex items-center gap-2 font-bold text-blue-900 mb-2 text-base"><Sun size={20} className="text-blue-500" /> 1. État du ciel</h3>
+                  <p className="text-slate-700 text-sm leading-relaxed">{data.previsions.ciel}</p>
+                </section>
+                <section className="break-inside-avoid bg-white p-5 rounded-2xl border-l-4 border-indigo-400 shadow-sm border-t border-r border-b border-slate-100 smart-break">
+                  <h3 className="flex items-center gap-2 font-bold text-indigo-900 mb-2 text-base"><Wind size={20} className="text-indigo-500" /> 2. Situation des vents</h3>
+                  <p className="text-slate-700 text-sm leading-relaxed text-justify">{data.previsions.vents}</p>
+                </section>
+              </div>
+
+              <section className="break-inside-avoid bg-white p-5 rounded-2xl border-l-4 border-amber-400 shadow-sm border-t border-r border-b border-slate-100 smart-break">
+                <div className="flex justify-between items-start">
+                  <div className="w-2/3 pr-4">
+                    <h3 className="flex items-center gap-2 font-bold text-amber-900 mb-2 text-base"><Eye size={20} className="text-amber-500" /> 3. État de la Visibilité</h3>
+                    <p className="text-slate-700 text-sm mb-2">{data.previsions.visibilite}</p>
+                  </div>
+                  <div className="w-1/3 space-y-2">
+                      <div className="bg-amber-50 p-2 rounded border border-amber-100"><span className="text-[10px] font-bold text-amber-500 uppercase block">Nord</span><span className="text-sm font-bold text-slate-800">{data.previsions.visibiliteNord}</span></div>
+                      <div className="bg-emerald-50 p-2 rounded border border-emerald-100"><span className="text-[10px] font-bold text-emerald-500 uppercase block">Sud / Centre</span><span className="text-sm font-bold text-slate-800">{data.previsions.visibiliteSud}</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="break-inside-avoid bg-white p-5 rounded-2xl border-l-4 border-teal-400 shadow-sm border-t border-r border-b border-slate-100 smart-break">
+                  <h3 className="flex items-center gap-2 font-bold text-teal-900 mb-2 text-base"><Droplets size={20} className="text-teal-500" /> 4. Pluies</h3>
+                  <p className="text-slate-700 text-sm leading-relaxed">{data.previsions.pluies}</p>
+              </section>
+
+              <section className="break-inside-avoid bg-white rounded-2xl border-l-4 border-rose-400 shadow-sm border-t border-r border-b border-slate-100 overflow-hidden smart-break">
+                <div className="p-5">
+                  <h3 className="flex items-center gap-2 font-bold text-rose-900 mb-3 text-base"><Thermometer size={20} className="text-rose-500" /> 5. Températures</h3>
+                  <p className="text-slate-700 mb-4 text-sm">{data.previsions.tempDesc}</p>
+                  <div className="flex gap-4">
+                    <div className="flex-1 bg-rose-50 p-3 rounded-xl border border-rose-100 flex items-center justify-between"><div><span className="text-[10px] font-bold text-rose-400 uppercase">Maximales</span><div className="text-2xl font-black text-slate-800">{data.previsions.tempMaxRange}</div></div><div className="text-right text-[10px] text-slate-500 leading-tight"><MapPin size={12} className="ml-auto text-rose-300 mb-1" />{data.previsions.tempMaxLieux}</div></div>
+                    <div className="flex-1 bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center justify-between"><div><span className="text-[10px] font-bold text-blue-400 uppercase">Minimales</span><div className="text-2xl font-black text-slate-800">{data.previsions.tempMinRange}</div></div><div className="text-right text-[10px] text-slate-500 leading-tight"><MapPin size={12} className="ml-auto text-blue-300 mb-1" />{data.previsions.tempMinLieux}</div></div>
+                  </div>
+                </div>
+                <div className="bg-rose-100 p-2 flex items-center gap-2 text-rose-900 text-xs px-5"><ArrowDown className="shrink-0" size={14} /><p><strong>N.B. :</strong> {data.previsions.tempNB}</p></div>
+              </section>
+            </div>
+
+            {/* CUSTOM SECTIONS */}
+            {data.customSections.map((section, idx) => (
+              <div key={section.id} className="break-inside-avoid space-y-4 animate-in fade-in slide-in-from-bottom-2 smart-break">
+                {section.type === 'title' && (
+                  <div className="flex items-center gap-3">
+                    <div className="h-px bg-slate-300 flex-1"></div>
+                    <h2 className="text-slate-400 font-bold uppercase tracking-widest text-sm">{section.title}</h2>
+                    <div className="h-px bg-slate-300 flex-1"></div>
+                  </div>
+                )}
+                {section.type === 'paragraph' && (
+                  <section className={`p-5 rounded-2xl shadow-sm ${getStyleClasses(section.style)}`}>
+                    <h3 className={`font-bold mb-2 text-base ${getTitleColor(section.style)} flex items-center gap-2`}>
+                      <Layout size={20} className={getIconColor(section.style)} />
+                      {section.title}
+                    </h3>
+                    <p className={`text-sm leading-relaxed whitespace-pre-line ${section.style === 'emerald' ? 'text-white/90' : 'text-slate-700'}`}>{section.content}</p>
+                  </section>
+                )}
+                {section.type === 'list' && (
+                  <section className={`p-5 rounded-2xl shadow-sm ${getStyleClasses(section.style)}`}>
+                    <h3 className={`font-bold mb-3 text-base ${getTitleColor(section.style)} flex items-center gap-2`}>
+                      <List size={20} className={getIconColor(section.style)} />
+                      {section.title}
+                    </h3>
+                    <ul className="grid grid-cols-1 gap-2">
+                      {section.content.map((item, i) => (
+                        <li key={i} className="flex gap-3 items-start">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${section.style === 'emerald' ? 'bg-white' : 'bg-slate-400'}`}></div>
+                          <p className={`text-sm ${section.style === 'emerald' ? 'text-white' : 'text-slate-700'}`}>{item}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </div>
+            ))}
+
+            {/* III. CONSEILS */}
+            <section className="break-inside-avoid bg-emerald-800 text-emerald-50 rounded-3xl p-6 relative overflow-hidden print:bg-emerald-800 print:text-white smart-break">
+              <div className="relative z-10">
+                <h2 className="font-bold uppercase tracking-widest text-sm mb-3 border-b border-emerald-600 pb-1 inline-block">III. Conseils</h2>
+                <div className="bg-emerald-900/40 rounded-xl p-4 border border-emerald-700/50 print:border-white/20">
+                  <h4 className="font-bold text-white mb-3 flex items-center gap-2 text-sm"><ShieldCheck size={16} /> Mesures recommandées :</h4>
+                  <ul className="grid grid-cols-1 gap-2">
+                    {data.conseils.map((conseil, idx) => (
+                      <li key={idx} className="flex gap-3 items-start">
+                        <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mt-0.5 text-emerald-900 font-bold text-[10px] print:text-black">{idx + 1}</div>
+                        <p className="text-emerald-50 font-medium text-sm leading-snug">{conseil}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="mt-4 text-center pt-2 border-t border-emerald-700/50 flex justify-between items-end"><p className="text-[10px] text-emerald-300">Bamako, le {data.info.dateEmission}</p><p className="font-bold text-sm text-white">Soyez vigilants !</p></div>
+              </div>
+            </section>
+          </main>
+
+          <footer className="text-center pb-6 pt-2 text-slate-400 text-[10px] uppercase tracking-widest bg-white smart-break">© 2026 Agence Nationale de la Météorologie - Mali</footer>
+        </div>
+      </div>
+
+      {/* --- SUPER OVERLAY EDITEUR --- */}
+      {isEditing && (
+        <div className="fixed inset-0 z-40 bg-[#F0F2F5] editor-overlay-container no-print overflow-y-auto">
+          <div className="max-w-5xl mx-auto min-h-screen bg-white shadow-2xl flex flex-col">
+             
+             {/* HEADER EDITOR */}
+             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md shrink-0">
+               <div><h2 className="text-xl font-bold flex items-center gap-2"><Edit3 size={20} /> Éditeur Complet</h2><p className="text-xs text-slate-400">Modifiez absolument tous les champs du bulletin.</p></div>
+               <div className="flex gap-3">
+                 <button onClick={() => setIsEditing(false)} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"><X size={16}/> Fermer</button>
+                 <button onClick={handleDownloadPDF} disabled={isGenerating} className="bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20 border border-emerald-400 disabled:opacity-50">{isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} PDF</button>
+               </div>
+             </div>
+
+             {/* CORPS DE L'EDITEUR */}
+             <div className="p-8 space-y-10 pb-24 flex-1">
+               
+               {/* SECTION 1: CONFIGURATION */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+                   <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2"><ImageIcon size={16}/> Logo & En-tête</h3>
+                   <div className="space-y-4">
+                     {/* LOGO */}
+                     <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                       <label className="text-xs font-bold text-slate-400 block mb-2">Image du Logo</label>
+                       <div className="flex gap-2">
+                         <div className={`flex-1 p-2 rounded border cursor-pointer ${data.info.logoType === 'upload' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`} onClick={() => handleChange('info', 'logoType', 'upload')}>
+                            <span className="text-xs font-bold block mb-1">Local</span>
+                            <button onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }} className="w-full py-1 bg-slate-200 hover:bg-slate-300 rounded text-[10px] font-bold">Choisir</button>
+                            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" />
+                         </div>
+                         <div className={`flex-1 p-2 rounded border cursor-pointer ${data.info.logoType === 'url' ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`} onClick={() => handleChange('info', 'logoType', 'url')}>
+                            <span className="text-xs font-bold block mb-1">Lien Web</span>
+                            <input type="text" placeholder="https://..." value={data.info.logoUrl} onChange={(e) => handleChange('info', 'logoUrl', e.target.value)} className="w-full p-1 text-[10px] border rounded" onClick={(e) => e.stopPropagation()}/>
+                         </div>
+                       </div>
+                     </div>
+                     {/* INFOS */}
+                     <div className="grid grid-cols-3 gap-3">
+                        <div><label className="text-[10px] font-bold text-slate-400 block mb-1">Numéro</label><input type="text" value={data.info.numero} onChange={(e) => handleChange('info', 'numero', e.target.value)} className="w-full p-2 border rounded font-medium text-sm" /></div>
+                        <div className="col-span-2"><label className="text-[10px] font-bold text-slate-400 block mb-1">Période</label><input type="text" value={data.info.periode} onChange={(e) => handleChange('info', 'periode', e.target.value)} className="w-full p-2 border rounded font-medium text-sm" /></div>
+                        <div className="col-span-3"><label className="text-[10px] font-bold text-slate-400 block mb-1">Date d'émission (Bamako, le...)</label><input type="text" value={data.info.dateEmission} onChange={(e) => handleChange('info', 'dateEmission', e.target.value)} className="w-full p-2 border rounded font-medium text-sm" /></div>
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* SECTION 2: SYNOPTIQUE */}
+                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm">
+                   <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2"><Info size={16}/> Situation Synoptique</h3>
+                   <div className="space-y-4">
+                     <div><label className="text-[10px] font-bold text-slate-400 block mb-1">Phrase d'intro</label><input type="text" value={data.synoptique.texteIntro} onChange={(e) => handleChange('synoptique', 'texteIntro', e.target.value)} className="w-full p-2 border rounded font-medium text-sm" /></div>
+                     <div>
+                       <label className="text-[10px] font-bold text-slate-400 block mb-1">Points Clés</label>
+                       <div className="space-y-2">
+                         {data.synoptique.points.map((pt, i) => (
+                           <div key={i} className="flex gap-2">
+                             <input type="text" value={pt} onChange={(e) => handleSynoptiquePointChange(i, e.target.value)} className="flex-1 p-2 border rounded text-sm" />
+                             <button onClick={() => removeSynoptiquePoint(i)} className="p-2 text-red-400 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                           </div>
+                         ))}
+                         <button onClick={addSynoptiquePoint} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"><Plus size={12}/> Ajouter un point</button>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
+               {/* SECTION 3: PRÉVISIONS DÉTAILLÉES (TOUT EST LÀ !) */}
+               <div className="bg-white p-6 rounded-2xl border-2 border-slate-100 shadow-lg">
+                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-slate-100 pb-4"><Sun size={24} className="text-amber-500"/> Prévisions Météorologiques Complètes</h3>
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   {/* COLONNE GAUCHE */}
+                   <div className="space-y-6">
+                     <div>
+                       <label className="text-xs font-bold text-blue-500 uppercase block mb-2">1. État du Ciel</label>
+                       <textarea rows={3} value={data.previsions.ciel} onChange={(e) => handleChange('previsions', 'ciel', e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 text-sm" />
+                     </div>
+                     <div>
+                       <label className="text-xs font-bold text-indigo-500 uppercase block mb-2">2. Vents</label>
+                       <textarea rows={3} value={data.previsions.vents} onChange={(e) => handleChange('previsions', 'vents', e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 text-sm" />
+                     </div>
+                     <div>
+                       <label className="text-xs font-bold text-teal-500 uppercase block mb-2">4. Pluies</label>
+                       <textarea rows={2} value={data.previsions.pluies} onChange={(e) => handleChange('previsions', 'pluies', e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 text-sm" />
+                     </div>
+                   </div>
+
+                   {/* COLONNE DROITE */}
+                   <div className="space-y-6">
+                     <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
+                       <label className="text-xs font-bold text-amber-600 uppercase block mb-2">3. Visibilité</label>
+                       <textarea rows={2} value={data.previsions.visibilite} onChange={(e) => handleChange('previsions', 'visibilite', e.target.value)} className="w-full p-2 border rounded-lg bg-white text-sm mb-2" placeholder="Description générale..." />
+                       <div className="grid grid-cols-2 gap-2">
+                         <div><span className="text-[10px] text-slate-400 block">Nord</span><input type="text" value={data.previsions.visibiliteNord} onChange={(e) => handleChange('previsions', 'visibiliteNord', e.target.value)} className="w-full p-2 border rounded bg-white text-sm" /></div>
+                         <div><span className="text-[10px] text-slate-400 block">Sud/Centre</span><input type="text" value={data.previsions.visibiliteSud} onChange={(e) => handleChange('previsions', 'visibiliteSud', e.target.value)} className="w-full p-2 border rounded bg-white text-sm" /></div>
+                       </div>
+                     </div>
+
+                     <div className="bg-rose-50/50 p-4 rounded-xl border border-rose-100">
+                       <label className="text-xs font-bold text-rose-600 uppercase block mb-2">5. Températures</label>
+                       <input type="text" value={data.previsions.tempDesc} onChange={(e) => handleChange('previsions', 'tempDesc', e.target.value)} className="w-full p-2 border rounded-lg bg-white text-sm mb-3" placeholder="Tendance générale..." />
+                       <div className="grid grid-cols-2 gap-4 mb-3">
+                         <div className="bg-white p-2 rounded border border-rose-100">
+                           <span className="text-[10px] text-rose-400 font-bold block">MAXIMALES</span>
+                           <input type="text" value={data.previsions.tempMaxRange} onChange={(e) => handleChange('previsions', 'tempMaxRange', e.target.value)} className="w-full border-b border-dashed mb-1 font-bold text-sm" placeholder="Ex: 35°C à 40°C"/>
+                           <input type="text" value={data.previsions.tempMaxLieux} onChange={(e) => handleChange('previsions', 'tempMaxLieux', e.target.value)} className="w-full text-xs text-slate-500" placeholder="Lieux..."/>
+                         </div>
+                         <div className="bg-white p-2 rounded border border-blue-100">
+                           <span className="text-[10px] text-blue-400 font-bold block">MINIMALES</span>
+                           <input type="text" value={data.previsions.tempMinRange} onChange={(e) => handleChange('previsions', 'tempMinRange', e.target.value)} className="w-full border-b border-dashed mb-1 font-bold text-sm" placeholder="Ex: 15°C à 20°C"/>
+                           <input type="text" value={data.previsions.tempMinLieux} onChange={(e) => handleChange('previsions', 'tempMinLieux', e.target.value)} className="w-full text-xs text-slate-500" placeholder="Lieux..."/>
+                         </div>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         <span className="text-xs font-bold text-rose-600">N.B:</span>
+                         <input type="text" value={data.previsions.tempNB} onChange={(e) => handleChange('previsions', 'tempNB', e.target.value)} className="flex-1 p-1 border-b border-rose-200 bg-transparent text-xs" />
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
+               {/* SECTION 4: CONSEILS (Liste Dynamique) */}
+               <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-200">
+                 <h3 className="text-sm font-black text-emerald-800 uppercase tracking-wider mb-4 flex items-center gap-2"><ShieldCheck size={16}/> Conseils & Recommandations</h3>
+                 <div className="space-y-2">
+                   {data.conseils.map((conseil, i) => (
+                     <div key={i} className="flex gap-2">
+                       <div className="w-6 h-6 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-xs font-bold shrink-0">{i+1}</div>
+                       <input type="text" value={conseil} onChange={(e) => handleConseilChange(i, e.target.value)} className="flex-1 p-2 border border-emerald-200 rounded text-sm focus:ring-2 focus:ring-emerald-300 outline-none" />
+                       <button onClick={() => removeConseil(i)} className="text-emerald-400 hover:text-red-500 px-2"><Trash2 size={16}/></button>
+                     </div>
+                   ))}
+                   <button onClick={addConseil} className="mt-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 px-3 py-1 rounded inline-flex items-center gap-1 transition-colors"><Plus size={14}/> Ajouter une mesure</button>
+                 </div>
+               </div>
+
+               {/* SECTION 5: RUBRIQUES ADDITIONNELLES */}
+               <div className="border-t-2 border-dashed border-slate-200 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="flex items-center gap-2 text-slate-800 font-bold text-lg"><Plus size={20} className="text-slate-400"/> Rubriques Personnalisées (Optionnel)</h3>
+                  </div>
+                  <div className="flex gap-4 mb-6">
+                    <button onClick={() => addCustomSection('title')} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">Add Titre</button>
+                    <button onClick={() => addCustomSection('paragraph')} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">Add Paragraphe</button>
+                    <button onClick={() => addCustomSection('list')} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">Add Liste</button>
+                  </div>
+                  
+                  {/* Liste des sections custom (simplifiée pour l'éditeur complet) */}
+                  <div className="space-y-4">
+                    {data.customSections.map((section, index) => (
+                      <div key={section.id} className="bg-slate-50 p-4 rounded border border-slate-200 relative group">
+                        <div className="absolute right-2 top-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => moveSection(index, 'up')} className="p-1 hover:bg-white rounded"><ArrowUp size={14}/></button>
+                          <button onClick={() => moveSection(index, 'down')} className="p-1 hover:bg-white rounded"><ArrowDownIcon size={14}/></button>
+                          <button onClick={() => removeCustomSection(section.id)} className="p-1 text-red-400 hover:bg-white rounded"><Trash2 size={14}/></button>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">Rubrique {index+1}: {section.type}</span>
+                        <input type="text" value={section.title} onChange={(e) => updateCustomSection(section.id, 'title', e.target.value)} className="w-full mb-2 p-2 border rounded font-bold" placeholder="Titre..." />
+                        {section.type !== 'title' && (
+                           section.type === 'list' ? 
+                           (
+                             <div className="pl-4 border-l-2 border-slate-200 space-y-1">
+                               {section.content.map((item, i) => (
+                                 <input key={i} value={item} onChange={(e) => updateCustomSectionList(section.id, i, e.target.value)} className="w-full p-1 text-sm bg-white border rounded mb-1" />
+                               ))}
+                               <button onClick={() => addCustomSectionListItem(section.id)} className="text-xs text-blue-500">+ Item</button>
+                             </div>
+                           ) : 
+                           (<textarea rows={2} value={section.content} onChange={(e) => updateCustomSection(section.id, 'content', e.target.value)} className="w-full p-2 border rounded text-sm" />)
+                        )}
+                      </div>
+                    ))}
+                  </div>
+               </div>
+
+             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;

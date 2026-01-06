@@ -1,0 +1,25 @@
+# Dépendances (lourd, ne pas envoyer)
+node_modules
+.pnpm-store
+
+# Production (généré automatiquement)
+dist
+build
+
+# Sécurité (TRÈS IMPORTANT : ne jamais envoyer ses clés secrètes)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Fichiers système et logs
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tar.gz
+
+# Fichiers spécifiques Replit/Vite
+server/public
+vite.config.ts.*
