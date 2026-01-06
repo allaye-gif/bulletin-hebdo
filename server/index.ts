@@ -84,14 +84,14 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  // Render donne un port spécifique via process.env.PORT, il faut l'utiliser
+  // Render nous donne un port spécial, sinon on utilise 5000
   const port = parseInt(process.env.PORT || "5000", 10);
   
-  // Si on est en production (Render), on ouvre sur 0.0.0.0
-  // Si on est en dev (ton PC), on reste sur 127.0.0.1
+  // MAGIE : Si on est sur Render ("production"), on ouvre sur 0.0.0.0
+  // Si on est sur ton PC, on reste sur 127.0.0.1 pour éviter les bugs
   const host = process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
 
   httpServer.listen(port, host, () => {
-    log(`serving on port ${port} at ${host}`);
+    console.log(`🚀 Serveur lancé sur http://${host}:${port}`);
   });
 })();
